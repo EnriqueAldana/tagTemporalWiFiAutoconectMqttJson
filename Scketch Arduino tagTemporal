@@ -1,0 +1,192 @@
+
+void SuscribeMqtt()
+{
+  uint16_t packetIdSub = mqttClient.subscribe(MQTT_TOPIC, 0);
+  Serial.printf("Suscribiendose al topico %s, packetId: ", MQTT_TOPIC);
+  Serial.println(packetIdSub);
+  mqttClient.setCallback(RecibiendoMqtt);
+}
+void SuscribeMqttPropio()
+{
+  uint16_t packetIdSub = mqttClientOwn.subscribe(MQTT_TOPIC_OWN, 1);
+  Serial.printf("Suscribiendose al topico %s, packetId: ", MQTT_TOPIC_OWN);
+  Serial.println(packetIdSub);
+  mqttClientOwn.setCallback(RecibiendoMqttPropioJSON);
+  
+}
+
+void PublicaMqtt()
+{
+  String payload = "";
+  
+    payload = deviceName;
+    mqttClient.publish(MQTT_TOPIC, (char*)payload.c_str());
+    Serial.println("Enviado mensaje de señal de vida para : " + String(MQTT_TOPIC));
+ 
+}
+void PublicaMqttPropio()
+{
+  String payload = "";
+    payload = deviceName;
+    mqttClientOwn.publish(MQTT_TOPIC_OWN, (char*)payload.c_str());
+    Serial.println("Enviado mensaje de señal de vida para : "+ String(MQTT_TOPIC_OWN));
+
+}
+
+
+void RecibiendoMqtt(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Recibido del  ");
+  Serial.print(topic);
+  Serial.print(": ");
+
+  content = "";
+  for (size_t i = 0; i < length; i++) {
+    content.concat((char)payload[i]);
+  }
+  Serial.print(content);
+  Serial.println();
+}
+void RecibiendoMqttPropioJSON(char* topic, byte* payload, unsigned int length)
+{
+  
+
+
+}
+
+void OnMqttReceivedJSONOwn(char* topic, byte* payload, unsigned int length)
+{
+  Serial.println("");
+  Serial.print("Recibido del  ");
+  Serial.print(topic);
+  Serial.println(": ");
+
+  content = "";
+  for (size_t i = 0; i < length; i++) {
+    content.concat((char)payload[i]);
+  }
+  Serial.print(content);
+  Serial.println();
+  char json[] = "{\"device_name\":\"algo\",\"iDCommand\":\"algo\",\"data\":["",""]}";
+
+  DynamicJsonDocument doc(1024);
+  deserializeJson(doc, json);
+  DeserializationError error = deserializeJson(doc, content);
+  if (error) return;
+
+  // Aqui tenemos un doc
+  const String device_name = doc["device_name"];
+  const String    idCommand = doc["iDCommand"];
+  const String command    = doc["command"][0];
+  const String instruction   = doc["command"][1];
+  Serial.println("device_name:" + device_name);
+  Serial.println("iDCommand: " + idCommand);
+  Serial.println("command: " + command);
+  Serial.println("instruction: " + instruction);
+  // Aqui implementar un case para ejecutar accion en funcion del commando
+  if (command == "VehicularAccessBarrier") {
+    Serial.println("Ejecutando comando " + command + " instruccion" + instruction);
+    // Comando para la pluma del acceso
+    if (instruction == "UP") {
+      // Mandar accion sobre el pin D4 como testigo por 3 segundos
+      Serial.println("El acceso ha sido abierto");
+      // turn LED on
+      parpadeaLedWiFi_Inicio();
+      delay(10000);
+      parpadeaLedWiFi_Fin();
+    } else if (instruction == "DOWN") {
+      // Mandar accion sobre el pin D4 como testigo por 6 segundos
+      Serial.println("El acceso ha sido cerrado");
+      // turn LED on
+      parpadeaLedWiFi_Inicio();
+      delay(30000);
+      parpadeaLedWiFi_Fin();
+    }
+  }
+
+}
+
+
+void IniciarMqtt() {
+  Serial.println("Iniciando Mqtt...se fija direccion y puerto del Broker.");
+  mqttClient.setServer(MQTT_BROKER_ADRESS, MQTT_PORT);
+}
+void IniciarMqttPropio() {
+  Serial.println("Iniciando Mqtt...se fija direccion y puerto del Broker.");
+  mqttClientOwn.setServer(MQTT_BROKER_ADRESS, MQTT_PORT);
+}
+void ConectaMqtt() {
+  Serial.println("Iniciando la conexion a la plataforma para el topico: " + String(MQTT_TOPIC) + " ...");
+  while (!mqttClient.connected())
+  {
+
+    if (mqttClient.connect(MQTT_CLIENT_NAME))
+    {
+      Serial.print("Conexion establecida a la plataforma de " + String(MQTT_TOPIC) + ", rc = ");
+      Serial.println(mqttClient.state());
+
+    }
+    else
+    {
+      Serial.print("Falla la conexion a la plataforma de tagTemporal, rc = ");
+      Serial.print(mqttClient.state());
+      Serial.println(" intentando en los proximos 5 segundos...");
+      delay(5000);
+    }
+  }
+}
+
+void ConectaMqttPropio() {
+  Serial.println("Iniciando la conexion a la plataforma para el topico: " + String(MQTT_TOPIC_OWN) + " ...");
+  while (!mqttClientOwn.connected())
+  {
+
+    if (mqttClientOwn.connect(MQTT_CLIENT_NAME))
+    {
+      Serial.print("Conexion establecida a la plataforma de " + String(MQTT_TOPIC_OWN) + ", rc = ");
+      Serial.println(mqttClientOwn.state());
+
+    }
+    else
+    {
+      Serial.print("Fall la conexion a la plataforma de " + String(MQTT_TOPIC_OWN) + ", rc = ");
+      Serial.print(mqttClientOwn.state());
+      Serial.println(" intentando en los proximos 5 segundos...");
+      delay(5000);
+    }
+  }
+}
+
+
+void ConnectMqtt()
+{
+
+  while (!mqttClient.connected())
+  {
+    Serial.println("Iniciando la conexion a la plataforma para el topico: " + String(MQTT_TOPIC) + " ...");
+    if (mqttClient.connect(MQTT_CLIENT_NAME))
+    {
+      SuscribeMqtt();
+    }
+    else
+    {
+      Serial.print("Falla la conexion a la plataforma de tagTemporal, rc = ");
+      Serial.print(mqttClient.state());
+      Serial.println(" intentando en los proximos 5 segundos...");
+
+      delay(5000);
+    }
+  }
+
+}
+
+
+void EscucharMqtt() {
+  // si esta suscrito
+  Serial.print(".");   // imprime puntos para confirmar que está escuchando.
+  mqttClient.loop();
+}
+void EscucharMqttPropio() {
+  // si esta suscrito
+  Serial.print(".");   // imprime puntos para confirmar que está escuchando.
+  mqttClientOwn.loop();
+}
