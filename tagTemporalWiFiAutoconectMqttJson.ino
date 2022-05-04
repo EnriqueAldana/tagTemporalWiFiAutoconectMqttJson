@@ -2,7 +2,7 @@
 // Modo de uso.
 // Dentro de los primeros 30 segundos , el dispositivo tratara de conectarse al ultimo
 // Punto de Acceso cuyos datos se encuentran guardados en el EPROM a partir de su ultima conexion exitosa.
-// SI la conexion es exitosa, en la salida del puerto serial, sera mostrada la IP asignada. Usted podra acceder mediante un navegador a la pagina de inicio.
+// SI la conexion es exitosa, en la salida ydel puerto serial, sera mostrada la IP asignada. Usted podra acceder mediante un navegador a la pagina de inicio.
 // SI la conexion no puede ser establecida, el dispositivo se pondra en modo de Access point, busque en su red Wifi un nombre tal como esp8266ap y acceda
 // mediante la contraseña 12345678.
 // Vaya al menu principal indicado por unas rayitas y busque la opcion AutoConnect
@@ -19,22 +19,27 @@
 // Uinformacion Json
 // https://arduinojson.org/
 // Tipos de datos en Arduino https://programarfacil.com/blog/arduino-blog/tipos-de-datos-en-arduino/
-
+// Video para control de relevador https://www.youtube.com/watch?v=idJDYJ0PtWs
 //
 // CAUSAS de excepciones https://esp8266-arduino-spanish.readthedocs.io/es/latest/exception_causes.html
 
 // Formato JSON para mensajes.
-// suscripcion propia 4C:75:25:B0:6F:77
+// suscripcion propia 4c00:7500:2500:b00:6f00:7700
 //{
-// "device_name": "4C:75:25:B0:6F:77",
+// "device_name": "4c00:7500:2500:b00:6f00:7700",
 // "iDCommand": "12345678",
 // "command":["VehicularAccessBarrier","UP"]
 //}
 
+//{
+// "device_name": "4c00:7500:2500:b00:6f00:7700",
+// "iDCommand": "12345678",
+// "command":["KeepAlive",""]
+//}
+
 
 // Mejoras.
-// 1.- Implementar JSOn en publicacion para confirmar ultimo comando ejecutado.
-// 2.- Implementar recuperacion de conexion luego de falla mediante FREERTOS https://www.luisllamas.es/como-usar-freertos-en-arduino/
+// 1.- Implementar recuperacion de conexion luego de falla mediante FREERTOS https://www.luisllamas.es/como-usar-freertos-en-arduino/
 #include <AsyncMqttClient.h>
 #include <ESP8266WiFi.h>          // Replace with WiFi.h for ESP32
 #include <ESP8266WebServer.h>     // Replace with WebServer.h for ESP32
@@ -59,13 +64,22 @@ static const uint8_t D8   = 15;
 static const uint8_t D9   = 3;
 static const uint8_t D10  = 1;
 static const uint8_t ledWiFi = D4;
+
 String content = "";
 String deviceName = "Por definir en funcion del MAC Address";
 const uint8_t releUP = D0;
 const uint8_t releDOWN = D1;
+static const uint8_t accessPosition = D2;
+int currentAccessPosition = 0; // Variable temporal para ller el estatus del pin INPUT D2
+int lastAccessPosition = 0;
+int turnCloseAccess = 0;
+int turnOpenAccess = 0;
 String lastIdCommand = "";
+String currentIdCommand = "";
 String lastCommand = "";
+String currentCommand = "";
 String lastInstruction = "";
+String currentInstruction = "";
 
 
 //======================     Inicia implementacion asincrona  ==================
@@ -75,43 +89,6 @@ const char* MQTT_TOPIC_Async = "tagTemporal";                 // Estos datos deb
 const char* MQTT_TOPIC_OWN_Async = "4c00:7500:2500:b00:6f00:7700"; // Estos datos deben ser configurados por autoConfig  OBLIGATORIO
 AsyncMqttClient mqttClientAsync;
 
-
-void TurnOpenAccess() {
-  // Mandar accion sobre el pin D4 como testigo por 50 milisegundos
-  byte estadoWifi = digitalRead(ledWiFi);
-  Serial.println("Estado del OUTPUT ledWiFi : " + String(estadoWifi));
-  digitalWrite(ledWiFi, LOW);
-  Serial.println("Mandando señal de salida al pin OUT para ejercer accion sobre un relee para ABRIR el acceso.");
-  byte estado = digitalRead(releUP);
-  if ( estado)  {  // Esta apagado estado =1 = HIGH
-    digitalWrite(releUP, LOW);  // Encendido
-    lastInstruction = "UP";
-    // Esperamos poquito para evitar el ruido
-    delay(50);
-    digitalWrite(releUP, HIGH); // Apagamos
-  }
-
-  digitalWrite(ledWiFi, HIGH); // Apagamos
-
-}
-
-void TurnCloseAccess() {
-  // Mandar accion sobre el pin D4 como testigo por 500 milisegundos
-  byte estadoWifi = digitalRead(ledWiFi);
-  Serial.println("Estado del OUTPUT ledWiFi : " + String(estadoWifi));
-  digitalWrite(ledWiFi, LOW);
-  Serial.println("Mandando señal de salida al pin OUT para ejercer accion sobre un relee para CERRAR el acceso.");
-  byte estado = digitalRead(releUP);
-  if ( estado)  {  // Esta apagado estado =1 = HIGH
-    digitalWrite(releDOWN, LOW);  // Encendido
-    lastInstruction = "DOWN";
-    // Esperamos poquito para evitar el ruido
-    delay(500);
-    digitalWrite(releDOWN, HIGH); // Apagamos
-  }
-
-  digitalWrite(ledWiFi, HIGH); // Apagamos
-}
 
 void OnMqttConnectAsync(bool sessionPresent)
 {
@@ -187,15 +164,35 @@ void OnMqttReceivedAsyncJson(char* topic, char* payload, AsyncMqttClientMessageP
   // Aqui  ejecutar accion en funcion del commando para el dispositivo propio
   if (deviceName == device_nameReceived) {
     if (command == "VehicularAccessBarrier") {
-      lastIdCommand = idCommand;
-      lastCommand = command;
-      Serial.println("Ejecutando comando " + command + " instruccion " + instruction);
-      // Comando para la pluma del acceso
-      if (instruction == "UP") {
-        TurnOpenAccess();
-      } else if (instruction == "DOWN") {
-        TurnCloseAccess();
+      currentIdCommand = idCommand;
+      if (currentIdCommand != lastIdCommand) {
+        Serial.println("Ejecutando comando " + command + " instruccion " + instruction);
+        currentCommand = command;
+        currentInstruction = instruction;
+        // Comando para la pluma del acceso
+        if (instruction == "UP") {
+          turnOpenAccess = 1;
+        } else if (instruction == "DOWN") {
+          turnCloseAccess = 1;
+        }
       }
+
+    } else if (command == "KeepAlive") {
+      String payload = "";                                   // Publica sobre la plataforma
+      DynamicJsonDocument doc(1024);
+      doc["device_name"] = deviceName;
+      doc["currentIdCommand"]   = currentIdCommand;
+      doc["command"][0] = currentCommand;
+      doc["command"][1] = currentInstruction;
+
+      if (currentAccessPosition) {
+        doc["currentAccessPosition"] = "DOWN";
+      } else {
+        doc["currentAccessPosition"] = "UP";
+      }
+      //serializeJson(doc, Serial);
+      serializeJson(doc, payload);
+      mqttClientAsync.publish(MQTT_TOPIC_Async, 0, true, (char*)payload.c_str());   // Publica sobre la plataforma
     }
   }
 }
@@ -220,19 +217,31 @@ void PublisMqttAsync(String data)
   Serial.println("Enviando Id. -> " + data);
 }
 
-//void PublisMqttAsyncJson()
-//{
-//
-//   String payload = "";
-//   StaticJsonDocument<300> doc;
-//   doc["device_name"] = deviceName;
-//  doc["iDCommand"]   = lastInstruction;
-//  doc["command"][0] = lastCommand;
-//  doc["command"][1] = lastInstruction;
-//   serializeJson(doc, payload);
-//  mqttClientAsync.publish(MQTT_TOPIC_Async, 0, true, (char*)payload.c_str());   // Publica sobre la plataforma
-//  Serial.println("Enviando Json. -> " + doc);
-//}
+void PublisMqttAsyncJson()
+{
+
+  // Reportar estado del dispositivo
+  // Hay algun cambio
+  if ( (currentAccessPosition != lastAccessPosition) || (currentIdCommand != lastIdCommand)) {
+    String payload = "";                                   // Publica sobre la plataforma
+    DynamicJsonDocument doc(1024);
+    doc["device_name"] = deviceName;
+    doc["currentIdCommand"]   = currentIdCommand;
+    doc["command"][0] = currentCommand;
+    doc["command"][1] = currentInstruction;
+
+    if (currentAccessPosition) {
+      doc["currentAccessPosition"] = "DOWN";
+    } else {
+      doc["currentAccessPosition"] = "UP";
+    }
+    //serializeJson(doc, Serial);
+    serializeJson(doc, payload);
+    mqttClientAsync.publish(MQTT_TOPIC_Async, 0, true, (char*)payload.c_str());   // Publica sobre la plataforma
+  }
+
+
+}
 
 
 void ConnectToMqttAsync()
@@ -284,7 +293,10 @@ void rootPage() {
 void setup() {
   delay(1000);
   pinMode(releUP, OUTPUT);   // D0
+  digitalWrite(releUP, HIGH); // Apagamos
   pinMode(releDOWN, OUTPUT);   // D1
+  digitalWrite(releDOWN, HIGH); // Apagamos
+  pinMode(accessPosition, INPUT);  // Posicion del actuador normalmente abierto = 0
   pinMode(ledWiFi, OUTPUT);   // D4  led de la ESP8266
   Serial.begin(115200);
   Serial.println();
@@ -322,6 +334,8 @@ void setup() {
   int int_5 = (byte)mac[4] << 8;
   int int_6 = (byte)mac[5] << 8;
   deviceName = String(int_1, HEX) + ":" + String(int_2, HEX) + ":" + String(int_3, HEX) + ":" + String(int_4, HEX) + ":" + String(int_5, HEX) + ":" + String(int_6, HEX);
+  //deviceName = String(HEX) + ":" + String(HEX) + ":" + String(HEX) + ":" + String(HEX) + ":" + String(HEX) + ":" + String(HEX);
+
   parpadeaLedWiFi_Fin();
 
   // ============= Inicializacion proceso Asincrono  =======
@@ -335,10 +349,34 @@ void loop() {
     // Aqui implementar MQTT
     delay(1000);
     //PublisMqttAsync(millis());
-    PublisMqttAsync(deviceName);
-   // PublisMqttAsyncJson();
-
+    //PublisMqttAsync(deviceName);
+    PublisMqttAsyncJson();
   } else {
     Serial.println("Conexion al WiFi perdida...el dispositivo tratara de reconectarse luego de 3 minutos...");
   }
+  // Posicion del actuador
+  lastAccessPosition = currentAccessPosition;
+  currentAccessPosition = digitalRead(accessPosition);
+
+  // Evaluar instruccion
+  if (turnCloseAccess == 1) {
+    digitalWrite(releDOWN, LOW);  // Encendido
+    // Esperamos poquito para evitar el ruido
+    delay(50);
+    digitalWrite(releDOWN, HIGH);  // Encendido
+    turnCloseAccess = 0;
+    lastIdCommand = currentIdCommand;
+
+  }
+  if (turnOpenAccess == 1) {
+    digitalWrite(releUP, LOW);  // Encendido
+    // Esperamos poquito para evitar el ruido
+    delay(50);
+    digitalWrite(releUP, HIGH);  // Encendido
+    turnOpenAccess = 0;
+    lastIdCommand = currentIdCommand;
+  }
+
+
+
 }
