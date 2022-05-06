@@ -40,6 +40,12 @@
 
 // Mejoras.
 // 1.- Implementar recuperacion de conexion luego de falla mediante FREERTOS https://www.luisllamas.es/como-usar-freertos-en-arduino/
+// 2.- Implementar configuracion en AutoConnect. Por lo pronto grabar progrma por cada tarjeta
+// const IPAddress MQTT_HOST_Async(74, 208, 108, 189);           // Estos datos deben ser configurados por autoConfig  OBLIGATORIO
+// const int MQTT_PORT_Async = 1883;                             // Estos datos deben ser configurados por autoConfig
+// const char* MQTT_TOPIC_Async = "tagTemporal";                 // Estos datos deben ser configurados por autoConfig
+// const char* MQTT_TOPIC_OWN_Async = "4c00:7500:2500:b00:6f00:7700"; // Estos datos deben ser configurados por autoConfig  OBLIGATORIO//
+
 #include <AsyncMqttClient.h>
 #include <ESP8266WiFi.h>          // Replace with WiFi.h for ESP32
 #include <ESP8266WebServer.h>     // Replace with WebServer.h for ESP32
@@ -362,7 +368,7 @@ void loop() {
   if (turnCloseAccess == 1) {
     digitalWrite(releDOWN, LOW);  // Encendido
     // Esperamos poquito para evitar el ruido
-    delay(50);
+    delay(1000);
     digitalWrite(releDOWN, HIGH);  // Encendido
     turnCloseAccess = 0;
     lastIdCommand = currentIdCommand;
@@ -371,7 +377,7 @@ void loop() {
   if (turnOpenAccess == 1) {
     digitalWrite(releUP, LOW);  // Encendido
     // Esperamos poquito para evitar el ruido
-    delay(50);
+    delay(1000 );
     digitalWrite(releUP, HIGH);  // Encendido
     turnOpenAccess = 0;
     lastIdCommand = currentIdCommand;
